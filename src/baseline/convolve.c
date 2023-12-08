@@ -23,7 +23,12 @@ typedef struct {
     int byte_rate;
     short block_align;
     short bits_per_sample;
-} WavHeader;
+} Subchunk1Header;
+
+typedef struct {
+    char subchunk2_id[4];
+    int subchunk2_size;
+} Subchunk2Header;
 
 // a simple helper function that checks if all files in an array have .wav extension
 bool hasWavExtension(int numOfFiles, char* fileNames[]) {
@@ -112,41 +117,36 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
-    // initialize WavHeader struct for input and impulse data
-    WavHeader inputHeader;
-    WavHeader impulseHeader;
-    fread(&inputHeader, sizeof(inputHeader), 1, inputFile);
-    fwrite(&inputHeader, sizeof(inputHeader), 1, outputFile);
-    fread(&impulseHeader, sizeof(impulseHeader), 1, impulseFile);
+    // initialize Subchunk1Header struct for input and impulse data
+    Subchunk1Header inputSubchunk1Header;
+    Subchunk1Header impulseSubchunk1Header;
+    fread(&inputSubchunk1Header, sizeof(inputSubchunk1Header), 1, inputFile);
+    fwrite(&inputSubchunk1Header, sizeof(inputSubchunk1Header), 1, outputFile);
+    fread(&impulseSubchunk1Header, sizeof(impulseSubchunk1Header), 1, impulseFile);
     // now, we check to see if size of subchunk1 for input and IR is larger than 16
-    if (inputHeader.subchunk1_size > 16)
-        readAndWriteExtraBytes(inputHeader.subchunk1_size - 16, inputFile, outputFile);
-    if (impulseHeader.subchunk1_size > 16)
-        readAndWriteExtraBytes(impulseHeader.subchunk1_size - 16, impulseFile, NULL);
+    if (inputSubchunk1Header.subchunk1_size > 16)
+        readAndWriteExtraBytes(inputSubchunk1Header.subchunk1_size - 16, inputFile, outputFile);
+    if (impulseSubchunk1Header.subchunk1_size > 16)
+        readAndWriteExtraBytes(impulseSubchunk1Header.subchunk1_size - 16, impulseFile, NULL);
 
-    // now, we read header of subchunk2 for input and IR file
-    char input_subchunk2_id[4];
-    int input_subchunk2_size;
-    char impulse_subchunk2_id[4];
-    int impulse_subchunk2_size;
+    // initialize Subchunk2Header struct for input and impulse data
+    Subchunk2Header inputSubchunk2Header;
+    Subchunk2Header impulseSubchunk2Header;
     // read data into vars starting with input file
-    fread(&input_subchunk2_id, sizeof(input_subchunk2_id), 1, inputFile);
-    fwrite(&input_subchunk2_id, sizeof(input_subchunk2_id), 1, outputFile);
-    fread(&input_subchunk2_size, sizeof(input_subchunk2_size), 1, inputFile);
-    fwrite(&input_subchunk2_size, sizeof(input_subchunk2_size), 1, outputFile);
+    fread(&inputSubchunk2Header, sizeof(inputSubchunk2Header), 1, inputFile);
+    fwrite(&inputSubchunk2Header, sizeof(inputSubchunk2Header), 1, outputFile);
     // now the impulse file
-    fread(&impulse_subchunk2_id, sizeof(impulse_subchunk2_id), 1, impulseFile);
-    fread(&impulse_subchunk2_size, sizeof(impulse_subchunk2_size), 1, impulseFile);
+    fread(&impulseSubchunk2Header, sizeof(impulseSubchunk2Header), 1, impulseFile);
 
     // calculate the number of samples for the input and IR files respectively
-    int inputNumSamples = input_subchunk2_size / (inputHeader.bits_per_sample / 8);
-    int impulseNumSamples = impulse_subchunk2_size / (impulseHeader.bits_per_sample / 8);
+    int inputNumSamples = inputSubchunk2Header.subchunk2_size / (inputSubchunk1Header.bits_per_sample / 8);
+    int impulseNumSamples = impulseSubchunk2Header.subchunk2_size / (impulseSubchunk1Header.bits_per_sample / 8);
     // allocate space to hold data from input and IR files
-    short *inputData = (short *) malloc(input_subchunk2_size);
-    short *impulseData = (short *) malloc(impulse_subchunk2_size);
+    short *inputData = (short *) malloc(inputSubchunk2Header.subchunk2_size);
+    short *impulseData = (short *) malloc(impulseSubchunk2Header.subchunk2_size);
     // now read data from respective files
-    fread(inputData, sizeof(short), input_subchunk2_size / sizeof(short), inputFile);
-    fread(impulseData, sizeof(short), impulse_subchunk2_size / sizeof(short), impulseFile);
+    fread(inputData, sizeof(short), inputSubchunk2Header.subchunk2_size / sizeof(short), inputFile);
+    fread(impulseData, sizeof(short), impulseSubchunk2Header.subchunk2_size / sizeof(short), impulseFile);
 
     // initialize float arrays for input - use malloc
     float *inputSignal = (float *) malloc(inputNumSamples * sizeof(float));
