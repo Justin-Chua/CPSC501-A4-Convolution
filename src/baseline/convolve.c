@@ -5,6 +5,10 @@
 
 // function declaration
 bool hasWavExtension(int numOfFiles, char* fileNames[]);
+float convolve(float x[], int N, float h[], int M, float y[], int P);
+float shortToFloat(short value);
+short scaledFloatToShort(float value, float scaleFactor);
+void readAndWriteExtraBytes(int size, FILE *readFile, FILE *writeFile);
 
 // wav header struct - referenced from tutorial
 typedef struct {
@@ -37,21 +41,17 @@ bool hasWavExtension(int numOfFiles, char* fileNames[]) {
 }
 
 // convolve method referenced from tutorial - slightly modified so that
-// the output array is passed in as a pointer, and returns largest 
-float convolve(float x[], int N, float h[], int M, float y[], int P)
-{
+// it returns largest value computed during convolution
+float convolve(float x[], int N, float h[], int M, float y[], int P) {
     int n, m;
     float largestValue = 0.0;
     /* Clear Output Buffer y[] */
     for (n = 0; n < P; n++)
-    {
         y[n] = 0.0;
-    }
-
     /* Outer Loop: process each input value x[n] in turn */
-    for (n = 0; n < N; n++){
+    for (n = 0; n < N; n++) {
         /* Inner loop: process x[n] with each sample of h[n] */
-        for (m = 0; m < M; m++){
+        for (m = 0; m < M; m++) {
             y[n + m] += x[n] * h[m];
             // store in temp variable to minimize number of array accesses
             float currentYVal = abs(y[n + m]);
@@ -70,16 +70,29 @@ float shortToFloat(short value) {
 
 // helper method to convert float back to short, with scaling factor applied
 short scaledFloatToShort(float value, float scaleFactor) {
-    return (short) ((value / (scaleFactor * 1.05)) * 32768);
+    // scaleFactor is multiplied by an additional 1.1, to guarantee that return value
+    // is well above or below -1/+1. This prevents static in output .wav file
+    return (short) ((value / (scaleFactor * 1.1f)) * 32768);
+}
+
+void readAndWriteExtraBytes(int remainingBytes, FILE *readFile, FILE *writeFile) {
+    if (readFile != NULL){
+        char garbageBytes[remainingBytes];
+        fread(garbageBytes, remainingBytes, 1, readFile);
+        if (writeFile != NULL)
+            fwrite(garbageBytes, remainingBytes, 1, writeFile);
+    }
 }
 
 int main(int argc, char *argv[]) {
+    // check if command line arguments are valid
     if (argc != 4 || !hasWavExtension(argc, argv))
         printf("Usage: ./convolve [inputFile] [IRFile] [outputFile]\n"
             "Note: All files should be in .wav format");
     
     // open files for reading/writing in binary
     FILE *inputFile = fopen(argv[1], "rb");
+    // error handling - check if file open was successful
     if (inputFile == NULL) {
         printf("Error: specified input file does not exist!\n"
             "Terminating...\n");
@@ -93,27 +106,24 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
     FILE *outputFile = fopen(argv[3], "wb");
-    // initialize WavHeader struct for input and IR
+    if (outputFile == NULL) {
+        printf("Error: attempt to open file %s for writing failed\n"
+            "Terminating...\n", argv[3]);
+        exit(0);
+    }
+
+    // initialize WavHeader struct for input and impulse data
     WavHeader inputHeader;
     WavHeader impulseHeader;
-
     fread(&inputHeader, sizeof(inputHeader), 1, inputFile);
     fwrite(&inputHeader, sizeof(inputHeader), 1, outputFile);
     fread(&impulseHeader, sizeof(impulseHeader), 1, impulseFile);
     // now, we check to see if size of subchunk1 for input and IR is larger than 16
-    if (inputHeader.subchunk1_size > 16) {
-        // if so, we want to read the extraneous garbage bytes
-        int remainingBytes = inputHeader.subchunk1_size - 16;
-        // create random variable to store garbage bytes
-        char garbageBytes[remainingBytes];
-        fread(garbageBytes, remainingBytes, 1, inputFile);
-        fwrite(garbageBytes, remainingBytes, 1, outputFile);
-    }
-    if (impulseHeader.subchunk1_size > 16) {
-        int remainingBytes = inputHeader.subchunk1_size - 16;
-        char garbageBytes[remainingBytes];
-        fread(garbageBytes, remainingBytes, 1, impulseFile);
-    }
+    if (inputHeader.subchunk1_size > 16)
+        readAndWriteExtraBytes(inputHeader.subchunk1_size - 16, inputFile, outputFile);
+    if (impulseHeader.subchunk1_size > 16)
+        readAndWriteExtraBytes(impulseHeader.subchunk1_size - 16, impulseFile, NULL);
+
     // now, we read header of subchunk2 for input and IR file
     char input_subchunk2_id[4];
     int input_subchunk2_size;
@@ -127,6 +137,7 @@ int main(int argc, char *argv[]) {
     // now the impulse file
     fread(&impulse_subchunk2_id, sizeof(impulse_subchunk2_id), 1, impulseFile);
     fread(&impulse_subchunk2_size, sizeof(impulse_subchunk2_size), 1, impulseFile);
+
     // calculate the number of samples for the input and IR files respectively
     int inputNumSamples = input_subchunk2_size / (inputHeader.bits_per_sample / 8);
     int impulseNumSamples = impulse_subchunk2_size / (impulseHeader.bits_per_sample / 8);
@@ -145,10 +156,8 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < inputNumSamples; i++) {
         inputSignal[i] = shortToFloat(inputData[i]);
     }
-    // test - print out contents of inputSignal array
     for (int i = 0; i < impulseNumSamples; i++)
         impulseSignal[i] = shortToFloat(impulseData[i]);
-    printf("outputSignal[10] before: %d\n", outputSignal[10]);
     // now, we can call convolve method using float arrays
     float scaleFactor = convolve(inputSignal, inputNumSamples, impulseSignal, impulseNumSamples, 
         outputSignal, inputNumSamples + impulseNumSamples - 1);
@@ -158,6 +167,7 @@ int main(int argc, char *argv[]) {
         outputData[i] = scaledFloatToShort(outputSignal[i], scaleFactor);
     // write short array to output file
     fwrite(outputData, sizeof(short) * (inputNumSamples + impulseNumSamples - 1) , 1, outputFile);
+
     // finally, close all files before exiting
     fclose(inputFile);
     fclose(impulseFile);
