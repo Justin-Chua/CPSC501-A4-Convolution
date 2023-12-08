@@ -1,3 +1,15 @@
+/*
+ *  CPSC 501 Assignment 4 - Optimizing Program Performance
+ *  Author: Justin Chua
+ *  UCID: 30098941
+ * 
+ *  A C program that takes in a dry recording as a .wav file, and an impulse response as a .wav file as input,
+ *  and uses a input-side convolution algorithm in order to produce a final, convoluted .wav file. The result
+ *  of the convolution is a sound file that sounds as if it is being played in a specific concert hall. Many
+ *  of the methods used in this program are referenced from the tutorials.
+ * 
+ */
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,7 +22,7 @@ float shortToFloat(short value);
 short scaledFloatToShort(float value, float scaleFactor);
 void readAndWriteExtraBytes(int size, FILE *readFile, FILE *writeFile);
 
-// wav header struct - referenced from tutorial
+// struct used to hold header info for subchunk 1 - referenced from tutorial
 typedef struct {
     char chunk_id[4];
     int chunk_size;
@@ -25,12 +37,22 @@ typedef struct {
     short bits_per_sample;
 } Subchunk1Header;
 
+// struct used to hold header info for subchunk 2
 typedef struct {
     char subchunk2_id[4];
     int subchunk2_size;
 } Subchunk2Header;
 
-// a simple helper function that checks if all files in an array have .wav extension
+/*
+ * A simple method that checks to see if all strings in a char array
+ * all contain the .wav extension
+ * 
+ * @param numOfFiles An int the number of files to check for (i.e. argc - 1)
+ * @param fileNames A char array containing filenames to check through
+ * 
+ * @return validExtension A boolean which is set to false if a non ".wav" 
+ *                        extension is found
+*/
 bool hasWavExtension(int numOfFiles, char* fileNames[]) {
     bool validExtensions = true;
     for (int i = 1; i < numOfFiles; i++) {
@@ -45,8 +67,21 @@ bool hasWavExtension(int numOfFiles, char* fileNames[]) {
     return validExtensions;
 }
 
-// convolve method referenced from tutorial - slightly modified so that
-// it returns largest value computed during convolution
+/*
+ * A method that performs input-side convolution on the input float arrays
+ * x and h, and outputs the results of the convolution to float array y.
+ * This code is referenced from tutorial
+ * 
+ * @param x A float array containing data signals from a dry recording
+ * @param N The length of input array x
+ * @param h A float array containing data signals from an impulse response
+ * @param M The length of input array h
+ * @param y A float array that is to be updated with convoluted data signals
+ * @param P The length of input array y (i.e. N + M - 1)
+ * 
+ * @return largestValue A float that represents the largest value computed
+ *                      during the convolution
+*/
 float convolve(float x[], int N, float h[], int M, float y[], int P) {
     int n, m;
     float largestValue = 0.0;
@@ -68,22 +103,47 @@ float convolve(float x[], int N, float h[], int M, float y[], int P) {
     return largestValue;
 }
 
-// simple helper method to convert a short to a float in the range -1 to (just below) +1
+/*
+ * A helper method used to convert a short value into a float
+ * 
+ * @param value A short that is to be converted to a float
+ * 
+ * @return value converted to a float
+*/
 float shortToFloat(short value) {
     return value / 32768.0f;
 }
 
-// helper method to convert float back to short, with scaling factor applied
+/*
+ * A helper method used to convert a float value to a short
+ * 
+ * @param value A float that is to be converted to a short
+ * @param scaleFactor A float that represents a scaleFactor (i.e. largest value
+ *                    found during convolution), which value will be divided by
+ * 
+ * @return value converted to a short
+*/
 short scaledFloatToShort(float value, float scaleFactor) {
-    // scaleFactor is multiplied by an additional 1.1, to guarantee that return value
-    // is well above or below -1/+1. This prevents static in output .wav file
+    // scaleFactor is multiplied by an additional 1.1 to minimize static
     return (short) ((value / (scaleFactor * 1.1f)) * 32768);
 }
 
+/*
+ * A method that reads extraneous bytes in cases where the size of
+ * subchunk 1 is larger than 16
+ * 
+ * @param remainingBytes An int that represents the number of bytes to be read
+ * @param *readFile A FILE pointer that represents the file stream in which 
+ *                  extraneous bytes should be read from
+ * @param *writeFile A FILE pointer that represents the file stream in which
+ *                   the extraneous bytes should be written to.
+*/
 void readAndWriteExtraBytes(int remainingBytes, FILE *readFile, FILE *writeFile) {
     if (readFile != NULL){
         char garbageBytes[remainingBytes];
         fread(garbageBytes, remainingBytes, 1, readFile);
+        /* NULL is specified when reading the header for impulse response (as we don't need
+           to write this back to the output file) */
         if (writeFile != NULL)
             fwrite(garbageBytes, remainingBytes, 1, writeFile);
     }
