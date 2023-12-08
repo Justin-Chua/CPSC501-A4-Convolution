@@ -17,7 +17,7 @@
 
 // function declaration
 bool hasWavExtension(int numOfFiles, char* fileNames[]);
-float convolve(float x[], int N, float h[], int M, float y[], int P);
+void convolve(float x[], int N, float h[], int M, float y[], int P);
 float shortToFloat(short value);
 short scaledFloatToShort(float value, float scaleFactor);
 void readAndWriteExtraBytes(int size, FILE *readFile, FILE *writeFile);
@@ -61,7 +61,6 @@ bool hasWavExtension(int numOfFiles, char* fileNames[]) {
         fileExtension = strrchr(fileNames[i], '.');
         if (fileExtension == NULL || strcmp(fileExtension, ".wav") != 0) {
             validExtensions = false;
-            break;
         }
     }
     return validExtensions;
@@ -82,9 +81,8 @@ bool hasWavExtension(int numOfFiles, char* fileNames[]) {
  * @return largestValue A float that represents the largest value computed
  *                      during the convolution
 */
-float convolve(float x[], int N, float h[], int M, float y[], int P) {
+void convolve(float x[], int N, float h[], int M, float y[], int P) {
     int n, m;
-    float largestValue = 0.0;
     /* Clear Output Buffer y[] */
     for (n = 0; n < P; n++)
         y[n] = 0.0;
@@ -93,14 +91,8 @@ float convolve(float x[], int N, float h[], int M, float y[], int P) {
         /* Inner loop: process x[n] with each sample of h[n] */
         for (m = 0; m < M; m++) {
             y[n + m] += x[n] * h[m];
-            // store in temp variable to minimize number of array accesses
-            float currentYVal = abs(y[n + m]);
-            // if y[n+m] is larger than current value of largestValue, overwrite it
-            if (currentYVal > largestValue)
-                largestValue = currentYVal;
         }
     }
-    return largestValue;
 }
 
 /*
@@ -219,15 +211,21 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < impulseNumSamples; i++)
         impulseSignal[i] = shortToFloat(impulseData[i]);
     // now, we can call convolve method using float arrays
-    float scaleFactor = convolve(inputSignal, inputNumSamples, impulseSignal, impulseNumSamples, 
+    convolve(inputSignal, inputNumSamples, impulseSignal, impulseNumSamples, 
         outputSignal, inputNumSamples + impulseNumSamples - 1);
+    // now we find largest value stored in y, to be used as scaling factor 
+    float largestValue = 0.0;
+    for (int i = 0; i < inputNumSamples + impulseNumSamples - 1; i++) {
+        // if y[n+m] is larger than current value of largestValue, overwrite it
+        if (abs(outputSignal[i]) > largestValue)
+            largestValue = abs(outputSignal[i]);
+    }
     short *outputData = (short *) malloc((inputNumSamples + impulseNumSamples - 1) * sizeof(short));
     // convert output array back to short, and apply scaling
     for (int i = 0; i < inputNumSamples + impulseNumSamples - 1; i++)
-        outputData[i] = scaledFloatToShort(outputSignal[i], scaleFactor);
+        outputData[i] = scaledFloatToShort(outputSignal[i], largestValue);
     // write short array to output file
     fwrite(outputData, sizeof(short) * (inputNumSamples + impulseNumSamples - 1) , 1, outputFile);
-
     // finally, close all files before exiting
     fclose(inputFile);
     fclose(impulseFile);
